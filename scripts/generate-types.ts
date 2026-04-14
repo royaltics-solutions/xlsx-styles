@@ -4,7 +4,6 @@
  * This runs at build time to extract types without runtime dependency
  */
 
-import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 
