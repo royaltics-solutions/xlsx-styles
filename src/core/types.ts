@@ -24,4 +24,5 @@ export interface Worksheet {
   name: string;
   data: (Cell | string | number | boolean | null)[][];
   columnWidths?: number[];
+  merges?: string[];
 }

@@ -94,6 +94,10 @@ export interface SheetOptions {
   showRowColHeaders?: boolean;
   defaultRowHeight?: number;
   defaultStyle?: CellStyle;
+  /** Custom rows to prepend before the table header */
+  preRows?: any[][];
+  /** Excel range strings for merging cells, e.g. ["A1:F1"] */
+  merges?: string[];
 }
 
 export interface XldxOptions {

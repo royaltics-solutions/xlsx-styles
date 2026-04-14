@@ -57,6 +57,11 @@ export class Sheet {
   private buildProcessedData(): any[][] {
     const dataArray: any[][] = [];
     
+    // Add pre-header rows if provided
+    if (this.options.preRows) {
+      dataArray.push(...this.options.preRows);
+    }
+
     const headerRow = this.columns.map(col => col.header || col.key);
     dataArray.push(headerRow);
 
@@ -254,14 +259,15 @@ export class Sheet {
     };
   }
 
-  public toWorksheetData(): { data: any[][]; columnWidths?: number[] } {
+  public toWorksheetData(): { data: any[][]; columnWidths?: number[]; merges?: string[] } {
     const columnWidths = this.columns
       .map(col => this.calculateColumnWidth(col))
       .filter(width => width !== undefined) as number[];
 
     return {
       data: this.processedData,
-      columnWidths: columnWidths.length > 0 ? columnWidths : undefined
+      columnWidths: columnWidths.length > 0 ? columnWidths : undefined,
+      merges: this.options.merges
     };
   }
 }

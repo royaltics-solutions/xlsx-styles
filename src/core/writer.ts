@@ -16,7 +16,7 @@ export class XlsxWriter {
   private cellXfs: string[] = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
   private styleCache: Map<string, number> = new Map();
 
-  addWorksheet(name: string, data: any[][], columnWidths?: number[]): void {
+  addWorksheet(name: string, data: any[][], columnWidths?: number[], merges?: string[]): void {
     const cells: (Cell | string | number | boolean | null)[][] = data.map(row =>
       row.map(value => {
         if (typeof value === 'object' && value !== null && !(value instanceof Date) && 'value' in value) {
@@ -25,7 +25,7 @@ export class XlsxWriter {
         return value;
       })
     );
-    this.worksheets.push({ name, data: cells, columnWidths });
+    this.worksheets.push({ name, data: cells, columnWidths, merges });
   }
 
   private addSharedString(str: string): number {
@@ -154,7 +154,12 @@ export class XlsxWriter {
       }).join('');
       return cells ? `<row r="${rIdx + 1}">${cells}</row>` : '';
     }).join('');
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${rows}</sheetData></worksheet>`;
+
+    const merges = sheet.merges && sheet.merges.length > 0
+      ? `<mergeCells count="${sheet.merges.length}">${sheet.merges.map(ref => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`
+      : '';
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${rows}</sheetData>${merges}</worksheet>`;
   }
 
   private generateStyles(): string {
