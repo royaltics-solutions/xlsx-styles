@@ -1,0 +1,30 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build:pkg": {
+      "outputs": ["dist/**"],
+      "inputs": ["src/**/*.ts", "tsconfig.json", "package.json"]
+    },
+    "build": {
+      "dependsOn": ["build:pkg"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "inputs": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "lint": {
+      "inputs": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "format": {
+      "inputs": ["**/*.{ts,tsx,js,jsx,json,md}"]
+    },
+    "typecheck": {
+      "inputs": ["src/**/*.ts", "test/**/*.ts", "tsconfig.json"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

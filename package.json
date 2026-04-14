@@ -1,0 +1,94 @@
+{
+  "name": "@royaltics/xlsx-styles",
+  "version": "0.0.1",
+  "description": "A powerful Excel file builder for TypeScript/JavaScript with advanced styling and theming capabilities",
+  "workspaces": [],
+  "private": false,
+  "main": "dist/server/index.js",
+  "module": "dist/browser/index.js",
+  "browser": "dist/browser/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/browser/index.js",
+      "node": "./dist/server/index.js",
+      "default": "./dist/browser/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "turbo run build:pkg",
+    "build:pkg": "pnpm clean && pnpm build:browser && pnpm build:node && pnpm build:types",
+    "build:browser": "esbuild src/browser/index.ts --bundle --outfile=dist/browser/index.js --platform=browser --minify --format=esm",
+    "build:node": "esbuild src/server/index.ts --bundle --outfile=dist/server/index.js --platform=node --minify --format=esm --external:fs --external:fs/promises --external:buffer",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "clean": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
+    "lint": "turbo lint",
+    "lint:run": "oxlint src test",
+    "lint:fix": "oxlint src test --fix",
+    "format": "turbo format",
+    "format:run": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "release": "release-it",
+    "test": "turbo test",
+    "test:run": "echo 'Testing not yet configured for vitest'",
+    "typecheck": "turbo typecheck",
+    "typecheck:run": "tsc --noEmit",
+    "update": "codependence --update && pnpm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/royaltics-solutions/xlsx-styles.git"
+  },
+  "keywords": [
+    "excel",
+    "xlsx",
+    "spreadsheet",
+    "exceljs",
+    "typescript",
+    "javascript",
+    "reports",
+    "data-export",
+    "styling",
+    "theming",
+    "workbook",
+    "worksheet",
+    "table",
+    "data-visualization"
+  ],
+  "author": "Jeff Wainwright <https:jeffry.in> (yowainwright@gmail.com)",
+  "license": "Elastic-2.0",
+  "bugs": {
+    "url": "https://github.com/royaltics-solutions/xlsx-styles.git"
+  },
+  "homepage": "https://github.com/royaltics-solutions/xlsx-styles",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "codependence": "^1.0.0-1",
+    "esbuild": "^0.25.0",
+    "oxlint": "^1.12.0",
+    "pastoralist": "latest",
+    "prettier": "3.6.2",
+    "release-it": "19.0.4",
+    "turbo": "2.5.5",
+    "typescript": "5.8.3"
+  },
+  "release-it": {
+    "git": {
+      "commitMessage": "chore: release"
+    }
+  },
+  "packageManager": "pnpm@10.32.0"
+}

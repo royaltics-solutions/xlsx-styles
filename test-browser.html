@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XLDX | Premium Excel Builder</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+        @theme {
+            --color-brand: #0066cc;
+            --color-brand-hover: #0052a3;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans min-h-screen">
+    <div class="max-w-4xl mx-auto py-12 px-6">
+        <header class="mb-12 text-center">
+            <h1 class="text-5xl font-extrabold tracking-tight text-gray-900 mb-4">
+                XLDX <span class="text-brand">Core</span>
+            </h1>
+            <p class="text-lg text-gray-600">High-performance, zero-dependency Excel file generation.</p>
+        </header>
+
+        <main class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+            <div class="p-8 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-xl font-semibold mb-6 flex items-center gap-2">
+                    <svg class="w-6 h-6 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Interactive Testing Lab
+                </h2>
+                
+                <div class="flex flex-wrap gap-4">
+                    <button onclick="testXLDX()" 
+                            class="bg-brand hover:bg-brand-hover text-white px-6 py-3 rounded-lg font-medium transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-brand/20 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        Generate & Download
+                    </button>
+                    
+                    <button onclick="testJSON()" 
+                            class="bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-6 py-3 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                        </svg>
+                        Dry Run (JSON)
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-8">
+                <div id="status-container" class="hidden mb-6">
+                    <div id="status" class="rounded-xl p-4 flex items-center gap-3"></div>
+                </div>
+
+                <div class="relative group">
+                    <div class="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span class="text-xs font-mono text-gray-400 bg-gray-800 px-2 py-1 rounded">PREVIEW</span>
+                    </div>
+                    <pre id="output" class="bg-gray-900 text-brand rounded-xl p-6 overflow-x-auto text-sm font-mono ring-1 ring-gray-800 custom-scrollbar max-h-96">Waiting for action...</pre>
+                </div>
+            </div>
+        </main>
+
+        <footer class="mt-12 text-center text-gray-400 text-sm">
+            <p>&copy; 2026 XLDX Project. Pure TypeScript Engine.</p>
+        </footer>
+    </div>
+
+    <!-- Load the bundle -->
+    <script src="dist/browser/index.js" type="module"></script>
+    
+    <script type="module">
+        import { Xldx } from './dist/browser/index.js';
+
+        // Test data
+        const testData = [
+            { id: 1, name: 'Alice Johnson', department: 'Engineering', salary: 95000, status: 'Active' },
+            { id: 2, name: 'Robert Smith', department: 'Marketing', salary: 78000, status: 'Away' },
+            { id: 3, name: 'Charlie Davis', department: 'Sales', salary: 82000, status: 'Active' },
+            { id: 4, name: 'Diana Prince', department: 'C-Suite', salary: 150000, status: 'Active' },
+            { id: 5, name: 'Edward Norton', department: 'DevOps', salary: 110000, status: 'Busy' }
+        ];
+
+        window.testXLDX = async () => {
+            const output = document.getElementById('output');
+            const statusContainer = document.getElementById('status-container');
+            const status = document.getElementById('status');
+
+            try {
+                output.textContent = 'Initializing engine...';
+                const xlsx = new Xldx(testData);
+                
+                xlsx.createSheet(
+                    { name: 'Organization Structure' },
+                    { key: 'id', header: 'ID', width: 10 },
+                    { key: 'name', header: 'Employee Name', width: 25 },
+                    { key: 'department', header: 'Department', width: 20 },
+                    { key: 'salary', header: 'Annual Salary', width: 15 },
+                    { key: 'status', header: 'Current Status', width: 15 }
+                );
+                
+                output.textContent = 'Building XML structures...';
+                await xlsx.download('xldx-preview.xlsx');
+                
+                statusContainer.classList.remove('hidden');
+                status.className = 'rounded-xl p-4 flex items-center gap-3 bg-green-50 text-green-700 border border-green-100';
+                status.innerHTML = '<span>✅ Excel file generated and downloaded successfully!</span>';
+                
+                output.textContent = JSON.stringify(xlsx.toJSON(), null, 2);
+                
+            } catch (error) {
+                console.error(error);
+                statusContainer.classList.remove('hidden');
+                status.className = 'rounded-xl p-4 flex items-center gap-3 bg-red-50 text-red-700 border border-red-100';
+                status.innerHTML = `<span>❌ Error: ${error.message}</span>`;
+            }
+        };
+
+        window.testJSON = async () => {
+            try {
+                const xlsx = new Xldx(testData);
+                xlsx.createSheet({ name: 'JSON Preview' }, { key: 'name', header: 'Name' }, { key: 'salary', header: 'Salary' });
+                document.getElementById('output').textContent = JSON.stringify(xlsx.toJSON(), null, 2);
+            } catch (error) {
+                alert('JSON error: ' + error.message);
+            }
+        };
+    </script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+    </style>
+</body>
+</html>
