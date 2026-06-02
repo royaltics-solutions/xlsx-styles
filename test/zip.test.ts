@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { MiniZip, MiniUnzip } from "../src/zip";
 
 describe("MiniZip", () => {

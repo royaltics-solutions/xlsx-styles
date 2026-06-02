@@ -66,3 +66,18 @@ export interface WorksheetView {
   showGridLines?: boolean;
   showRowColHeaders?: boolean;
 }
+
+export interface ReadOptions {
+  header?: string[] | number;
+  blankrows?: boolean;
+  range?: number | { s: { r: number; c: number }; e: { r: number; c: number } };
+  defval?: any;
+  raw?: boolean;
+  sheetRows?: number;
+}
+
+export interface SheetResult {
+  name: string;
+  data: any[][];
+  json?: Record<string, any>[];
+}

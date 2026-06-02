@@ -9,7 +9,7 @@ import type {
   PatternFunction
 } from "./schemas";
 import type { ColorTheme } from "./themes";
-import type { DataRow, SheetsData, ColumnData, SheetDataAPI } from "./types";
+import type { DataRow, SheetsData, ColumnData, SheetDataAPI, ReadOptions } from "./types";
 import { 
   setTheme,
   zebraBg,
@@ -193,10 +193,10 @@ export class Xldx {
     };
   }
 
-  static async read(data: Uint8Array | Buffer): Promise<any> {
+  static async read(data: Uint8Array | Buffer, options?: ReadOptions): Promise<any> {
     const uint8Array = data instanceof Buffer ? new Uint8Array(data) : data;
     const reader = new XlsxReader(uint8Array);
-    return reader.read();
+    return reader.read(options);
   }
 
   static fromJSON(json: any): Xldx {

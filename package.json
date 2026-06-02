@@ -1,6 +1,6 @@
 {
   "name": "@royaltics/xlsx-styles",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A powerful Excel file builder for TypeScript/JavaScript with advanced styling and theming capabilities",
   "workspaces": [],
   "private": false,
@@ -46,7 +46,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "release": "release-it",
     "test": "turbo test",
-    "test:run": "echo 'Testing not yet configured for vitest'",
+    "test:run": "vitest run",
+    "prepublishOnly": "pnpm test:run && pnpm build:pkg",
     "typecheck": "turbo typecheck",
     "typecheck:run": "tsc --noEmit",
     "update": "codependence --update && pnpm install"
@@ -86,7 +87,8 @@
     "prettier": "3.6.2",
     "release-it": "19.0.4",
     "turbo": "2.5.5",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vitest": "^4.1.8"
   },
   "release-it": {
     "git": {

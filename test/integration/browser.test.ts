@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach } from "bun:test";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { Xldx } from "../../src/browser";
 import { setupDOMMocks, resetMocks, mockElement, mockDocument, mockURL } from "../mocks/dom";
 
@@ -18,11 +18,11 @@ describe("Browser Integration Tests", () => {
 
       await xldx.download("test.xlsx");
 
-      expect(mockDocument.createElement).toHaveBeenCalledWith("a");
+      expect(mockDocument.createElement.mock.calls.some((args: any[]) => args[0] === "a")).toBe(true);
       expect(mockElement.download).toBe("test.xlsx");
-      expect(mockElement.click).toHaveBeenCalled();
-      expect(mockURL.createObjectURL).toHaveBeenCalled();
-      expect(mockURL.revokeObjectURL).toHaveBeenCalled();
+      expect(mockElement.click.mock.calls.length).toBeGreaterThan(0);
+      expect(mockURL.createObjectURL.mock.calls.length).toBeGreaterThan(0);
+      expect(mockURL.revokeObjectURL.mock.calls.length).toBeGreaterThan(0);
     });
 
     it("should use default filename", async () => {

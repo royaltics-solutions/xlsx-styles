@@ -1,22 +1,35 @@
-import { mock } from "bun:test";
+function fnReturns<T>(returnValue: T): any {
+  const f: any = (...args: any[]) => {
+    f.mock.calls.push(args);
+    return returnValue;
+  };
+  f.mock = { calls: [] as any[][] };
+  f.mockClear = () => { f.mock.calls = []; };
+  return f;
+}
 
-export const mockElement = {
+export const mockElement: Record<string, any> = {
   href: "",
   download: "",
-  click: mock(() => {}),
+  click: fnReturns(undefined),
 };
 
-export const mockDocument = {
-  createElement: mock(() => mockElement),
+export const mockDocument: Record<string, any> = {
+  createElement: (...args: any[]) => {
+    mockDocument.createElement.mock.calls.push(args);
+    return mockElement;
+  },
   body: {
-    appendChild: mock(() => {}),
-    removeChild: mock(() => {}),
+    appendChild: fnReturns(undefined),
+    removeChild: fnReturns(undefined),
   },
 };
+(mockDocument.createElement as any).mock = { calls: [] as any[][] };
+(mockDocument.createElement as any).mockClear = () => { (mockDocument.createElement as any).mock.calls = []; };
 
-export const mockURL = {
-  createObjectURL: mock(() => "blob:mock-url"),
-  revokeObjectURL: mock(() => {}),
+export const mockURL: Record<string, any> = {
+  createObjectURL: fnReturns("blob:mock-url"),
+  revokeObjectURL: fnReturns(undefined),
 };
 
 export function setupDOMMocks() {

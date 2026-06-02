@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { Sheet } from "../src/sheet";
 import type { ColumnDefinition, SheetOptions, DataRow } from "../src";
 
@@ -302,8 +302,8 @@ describe("Sheet", () => {
       const worksheetData = sheet.toWorksheetData();
       
       expect(worksheetData.data[0]).toEqual(["Name", "Age"]);
-      expect(worksheetData.data[1]).toEqual(["Alice", 30]);
-      expect(worksheetData.data[2]).toEqual(["Bob", 25]);
+      expect(worksheetData.data[1]).toEqual([{ value: "Alice", style: {} }, { value: 30, style: {} }]);
+      expect(worksheetData.data[2]).toEqual([{ value: "Bob", style: {} }, { value: 25, style: {} }]);
     });
 
     it("should include column widths for numeric widths", () => {

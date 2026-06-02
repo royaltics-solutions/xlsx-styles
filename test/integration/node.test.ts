@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { Xldx } from "../../src/server";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { Xldx, readFile } from "../../src/server";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { fileURLToPath } from "url";
 
-const TEST_OUTPUT_DIR = path.join(import.meta.dir, "output");
+const TEST_OUTPUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "output");
 
 describe("Node.js Integration Tests", () => {
   beforeAll(async () => {
@@ -249,6 +250,57 @@ describe("Node.js Integration Tests", () => {
       const result = await Xldx.read(await fs.readFile(filePath));
       expect(result.sheets[0].data[1]).toEqual(["Alice", 95]);
       expect(result.sheets[0].data[2]).toEqual(["Bob", 87]);
+    });
+  });
+
+  describe("readFile", () => {
+    it("should read an XLSX file from disk", async () => {
+      const data = [
+        { name: "Test", value: 42 }
+      ];
+
+      const xldx = new Xldx(data);
+      xldx.createSheet(
+        { name: "ReadFileTest" },
+        { key: "name", header: "Name" },
+        { key: "value", header: "Value" }
+      );
+
+      const filePath = path.join(TEST_OUTPUT_DIR, "readfile-test.xlsx");
+      await xldx.write(filePath);
+
+      const result = await readFile(filePath);
+      expect(result.sheets).toHaveLength(1);
+      expect(result.sheets[0].name).toBe("ReadFileTest");
+      expect(result.sheets[0].data[0]).toEqual(["Name", "Value"]);
+      expect(result.sheets[0].data[1]).toEqual(["Test", 42]);
+    });
+
+    it("should readFile with json output using options", async () => {
+      const data = [
+        { name: "Alice", age: 30 },
+        { name: "Bob", age: 25 }
+      ];
+
+      const xldx = new Xldx(data);
+      xldx.createSheet(
+        { name: "People" },
+        { key: "name", header: "Name" },
+        { key: "age", header: "Age" }
+      );
+
+      const filePath = path.join(TEST_OUTPUT_DIR, "readfile-json.xlsx");
+      await xldx.write(filePath);
+
+      const result = await readFile(filePath, {
+        header: ["full_name", "years"],
+        blankrows: true
+      });
+
+      expect(result.sheets[0].json).toBeDefined();
+      expect(result.sheets[0].json).toHaveLength(3);
+      expect(result.sheets[0].json[1]).toEqual({ full_name: "Alice", years: 30 });
+      expect(result.sheets[0].json[2]).toEqual({ full_name: "Bob", years: 25 });
     });
   });
 
