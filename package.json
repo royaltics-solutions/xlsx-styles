@@ -1,6 +1,6 @@
 {
   "name": "@royaltics/xlsx-styles",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A powerful Excel file builder for TypeScript/JavaScript with advanced styling and theming capabilities",
   "workspaces": [],
   "private": false,
