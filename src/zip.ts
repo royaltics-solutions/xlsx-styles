@@ -197,44 +197,152 @@ export class MiniZip {
   }
 }
 
+/** Tope por entrada descomprimida. Evita que un ZIP pequeño expanda cientos de MB. */
+export const MAX_UNCOMPRESSED_ENTRY_BYTES = 64 * 1024 * 1024;
+/** Tope acumulado de todo lo que se decodifica en una instancia. */
+export const MAX_UNCOMPRESSED_TOTAL_BYTES = 256 * 1024 * 1024;
+
+export class UnzipLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnzipLimitError';
+  }
+}
+
+interface LocalEntry {
+  compressionMethod: number;
+  generalPurpose: number;
+  compressedSize: number;
+  fileName: string;
+  dataStart: number;
+}
+
+type InflateRawSync = (
+  data: Uint8Array,
+  options: { maxOutputLength: number },
+) => Uint8Array;
+
+function isOutputLimitError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: string }).code === 'ERR_BUFFER_TOO_LARGE'
+  );
+}
+
+export interface UnzipLimits {
+  /** Tope por entrada. Default: MAX_UNCOMPRESSED_ENTRY_BYTES. */
+  maxEntryBytes?: number;
+  /** Tope acumulado de la instancia. Default: MAX_UNCOMPRESSED_TOTAL_BYTES. */
+  maxTotalBytes?: number;
+}
+
 export class MiniUnzip {
   private data: Uint8Array;
   private view: DataView;
+  private readonly maxEntryBytes: number;
+  private readonly maxTotalBytes: number;
+  private uncompressedRemaining: number;
   
-  constructor(data: Uint8Array) {
+  constructor(data: Uint8Array, limits?: UnzipLimits) {
     const ab = new ArrayBuffer(data.byteLength);
     new Uint8Array(ab).set(data);
     this.data = new Uint8Array(ab);
     this.view = new DataView(ab);
+    this.maxEntryBytes = limits?.maxEntryBytes ?? MAX_UNCOMPRESSED_ENTRY_BYTES;
+    this.maxTotalBytes = limits?.maxTotalBytes ?? MAX_UNCOMPRESSED_TOTAL_BYTES;
+    this.uncompressedRemaining = this.maxTotalBytes;
+  }
+
+  private takeUncompressed(byteLength: number): void {
+    if (byteLength > this.maxEntryBytes || byteLength > this.uncompressedRemaining) {
+      throw new UnzipLimitError(
+        `El archivo descomprimido supera el límite permitido (${this.maxEntryBytes} bytes por entrada, ${this.maxTotalBytes} en total)`,
+      );
+    }
+    this.uncompressedRemaining -= byteLength;
+  }
+
+  /**
+   * Lee un local file header solo si el tamaño declarado cabe en el buffer.
+   * Un tamaño inflado o un header truncado no avanza la lectura fuera del archivo.
+   */
+  private readLocalEntry(offset: number): LocalEntry | null {
+    if (offset < 0 || offset + 30 > this.data.length) return null;
+
+    const compressionMethod = this.view.getUint16(offset + 8, true);
+    const generalPurpose = this.view.getUint16(offset + 6, true);
+    const compressedSize = this.view.getUint32(offset + 18, true);
+    const fileNameLength = this.view.getUint16(offset + 26, true);
+    const extraFieldLength = this.view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraFieldLength;
+
+    if (dataStart > this.data.length) return null;
+    if (compressedSize > this.data.length - dataStart) return null;
+
+    const fileName = new TextDecoder().decode(this.data.subarray(nameStart, nameStart + fileNameLength));
+    return { compressionMethod, generalPurpose, compressedSize, fileName, dataStart };
   }
   
-  static async inflateRaw(data: Uint8Array): Promise<Uint8Array> {
-    try {
-      const { inflateRawSync } = await import('zlib');
-      return inflateRawSync(data);
-    } catch {
-      const ds = new DecompressionStream('deflate-raw');
-      const writer = ds.writable.getWriter();
-      const ab = new ArrayBuffer(data.byteLength);
-      new Uint8Array(ab).set(data);
-      await writer.write(ab);
-      await writer.close();
-      const chunks: Uint8Array[] = [];
-      const reader = ds.readable.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-      const total = chunks.reduce((s, c) => s + c.length, 0);
-      const result = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-      }
-      return result;
+  static async inflateRaw(
+    data: Uint8Array,
+    maxOutputLength: number = MAX_UNCOMPRESSED_ENTRY_BYTES,
+  ): Promise<Uint8Array> {
+    if (maxOutputLength < 1) {
+      throw new UnzipLimitError('Límite de descompresión inválido');
     }
+
+    let inflateRawSync: InflateRawSync | null = null;
+    try {
+      const zlib = await import('zlib');
+      inflateRawSync = zlib.inflateRawSync as InflateRawSync;
+    } catch {
+      inflateRawSync = null;
+    }
+
+    if (inflateRawSync) {
+      try {
+        return inflateRawSync(data, { maxOutputLength });
+      } catch (err) {
+        if (isOutputLimitError(err)) {
+          throw new UnzipLimitError(
+            `La entrada comprimida supera el límite de ${maxOutputLength} bytes`,
+          );
+        }
+        throw err;
+      }
+    }
+
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    const ab = new ArrayBuffer(data.byteLength);
+    new Uint8Array(ab).set(data);
+    await writer.write(ab);
+    await writer.close();
+    const chunks: Uint8Array[] = [];
+    const reader = ds.readable.getReader();
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxOutputLength) {
+        await reader.cancel();
+        throw new UnzipLimitError(
+          `La entrada comprimida supera el límite de ${maxOutputLength} bytes`,
+        );
+      }
+      chunks.push(value);
+    }
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return result;
   }
   
   getFile(path: string): string | null {
@@ -243,25 +351,18 @@ export class MiniUnzip {
     while (offset < this.data.length - 4) {
       const signature = this.view.getUint32(offset, true);
       
-      if (signature === 0x04034b50) { // Local file header
-        const compressionMethod = this.view.getUint16(offset + 8, true);
-        const fileNameLength = this.view.getUint16(offset + 26, true);
-        const extraFieldLength = this.view.getUint16(offset + 28, true);
-        const compressedSize = this.view.getUint32(offset + 18, true);
-        
-        const fileNameBytes = this.data.slice(offset + 30, offset + 30 + fileNameLength);
-        const fileName = new TextDecoder().decode(fileNameBytes);
-        
-        if (fileName === path) {
-          if (compressionMethod !== 0) {
-            return null;
-          }
-          const dataOffset = offset + 30 + fileNameLength + extraFieldLength;
-          const fileData = this.data.slice(dataOffset, dataOffset + compressedSize);
+      if (signature === 0x04034b50) {
+        const entry = this.readLocalEntry(offset);
+        if (!entry) break;
+
+        if (entry.fileName === path) {
+          if (entry.compressionMethod !== 0) return null;
+          const fileData = this.data.subarray(entry.dataStart, entry.dataStart + entry.compressedSize);
+          this.takeUncompressed(fileData.byteLength);
           return new TextDecoder().decode(fileData);
         }
         
-        offset += 30 + fileNameLength + extraFieldLength + compressedSize;
+        offset = entry.dataStart + entry.compressedSize;
       } else if (signature === 0x02014b50 || signature === 0x06054b50) {
         break;
       } else {
@@ -278,39 +379,31 @@ export class MiniUnzip {
     while (offset < this.data.length - 4) {
       const signature = this.view.getUint32(offset, true);
       
-      if (signature === 0x04034b50) { // Local file header
-        const compressionMethod = this.view.getUint16(offset + 8, true);
-        const fileNameLength = this.view.getUint16(offset + 26, true);
-        const extraFieldLength = this.view.getUint16(offset + 28, true);
-        const compressedSize = this.view.getUint32(offset + 18, true);
-        const generalPurpose = this.view.getUint16(offset + 6, true);
-        
-        const fileNameBytes = this.data.slice(offset + 30, offset + 30 + fileNameLength);
-        const fileName = new TextDecoder().decode(fileNameBytes);
-        
-        let dataStart = offset + 30 + fileNameLength + extraFieldLength;
-        let actualCompressedSize = compressedSize;
-        
-        if (compressionMethod === 0) {
-          const fileData = this.data.slice(dataStart, dataStart + actualCompressedSize);
-          if (fileName === path) {
-            return new TextDecoder().decode(fileData);
-          }
-          offset = dataStart + actualCompressedSize;
-        } else if (compressionMethod === 8) {
-          const compressedData = this.data.slice(dataStart, dataStart + actualCompressedSize);
-          const decompressed = await MiniUnzip.inflateRaw(compressedData);
-          if (fileName === path) {
-            return new TextDecoder().decode(decompressed);
-          }
-          offset = dataStart + actualCompressedSize;
-        } else {
-          offset = dataStart + actualCompressedSize;
-          continue;
+      if (signature === 0x04034b50) {
+        const entry = this.readLocalEntry(offset);
+        if (!entry) break;
+
+        const matches = entry.fileName === path;
+        let consumed = entry.compressedSize;
+
+        if (matches && entry.compressionMethod === 0) {
+          const fileData = this.data.subarray(entry.dataStart, entry.dataStart + entry.compressedSize);
+          this.takeUncompressed(fileData.byteLength);
+          return new TextDecoder().decode(fileData);
         }
-        
+
+        if (matches && entry.compressionMethod === 8) {
+          const compressedData = this.data.subarray(entry.dataStart, entry.dataStart + entry.compressedSize);
+          const cap = Math.min(this.maxEntryBytes, this.uncompressedRemaining);
+          const decompressed = await MiniUnzip.inflateRaw(compressedData, cap);
+          this.takeUncompressed(decompressed.byteLength);
+          return new TextDecoder().decode(decompressed);
+        }
+
+        offset = entry.dataStart + consumed;
+
         // Skip data descriptor if present (bit 3 set in general purpose flag)
-        if (generalPurpose & 0x08) {
+        if (entry.generalPurpose & 0x08) {
           if (offset < this.data.length - 4) {
             const nextSig = this.view.getUint32(offset, true);
             if (nextSig === 0x08074b50) {
@@ -335,16 +428,11 @@ export class MiniUnzip {
     while (offset < this.data.length - 4) {
       const signature = this.view.getUint32(offset, true);
       
-      if (signature === 0x04034b50) { // Local file header
-        const fileNameLength = this.view.getUint16(offset + 26, true);
-        const extraFieldLength = this.view.getUint16(offset + 28, true);
-        const compressedSize = this.view.getUint32(offset + 18, true);
-        
-        const fileNameBytes = this.data.slice(offset + 30, offset + 30 + fileNameLength);
-        const fileName = new TextDecoder().decode(fileNameBytes);
-        files.push(fileName);
-        
-        offset += 30 + fileNameLength + extraFieldLength + compressedSize;
+      if (signature === 0x04034b50) {
+        const entry = this.readLocalEntry(offset);
+        if (!entry) break;
+        files.push(entry.fileName);
+        offset = entry.dataStart + entry.compressedSize;
       } else if (signature === 0x02014b50 || signature === 0x06054b50) {
         break;
       } else {

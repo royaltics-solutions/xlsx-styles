@@ -4,7 +4,11 @@
  * shared strings (including rich text), and sheet-to-JSON conversion.
  */
 
-import { MiniUnzip } from '../zip';
+import {
+  MiniUnzip,
+  MAX_UNCOMPRESSED_ENTRY_BYTES,
+  MAX_UNCOMPRESSED_TOTAL_BYTES,
+} from '../zip';
 
 export interface ReadOptions {
   /** Column headers. 
@@ -23,6 +27,14 @@ export interface ReadOptions {
   raw?: boolean;
   /** Maximum number of rows to parse per sheet. */
   sheetRows?: number;
+  /** Máximo de filas por hoja. Default: 1_048_576. */
+  maxRows?: number;
+  /** Máximo de columnas. Default: 16_384. */
+  maxCols?: number;
+  /** Tope por entrada ZIP, en KB. Default: 65536 (64 MB). */
+  maxUncompressedEntryKB?: number;
+  /** Tope acumulado de bytes descomprimidos por archivo. Default: 256 MiB. */
+  maxUncompressedTotalBytes?: number;
 }
 
 export interface SheetResult {
@@ -30,6 +42,11 @@ export interface SheetResult {
   data: any[][];
   json?: Record<string, any>[];
 }
+
+/** Límite de Excel: 1.048.576 filas y 16.384 columnas. */
+const EXCEL_MAX_ROWS = 1_048_576;
+const EXCEL_MAX_COLS = 16_384;
+const MAX_SHEETS = 256;
 
 function columnLetter(col: number): string {
   let s = '';
@@ -41,11 +58,32 @@ function columnLetter(col: number): string {
   return s;
 }
 
+function positiveLimit(value: number | undefined, fallback: number, name: string): number {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} debe ser un entero mayor que 0`);
+  }
+  return value;
+}
+
+function entryLimitBytes(valueKB: number | undefined): number {
+  if (valueKB === undefined) return MAX_UNCOMPRESSED_ENTRY_BYTES;
+  const kb = positiveLimit(valueKB, MAX_UNCOMPRESSED_ENTRY_BYTES, 'maxUncompressedEntryKB');
+  const bytes = kb * 1024;
+  if (!Number.isSafeInteger(bytes)) {
+    throw new Error('maxUncompressedEntryKB es demasiado grande');
+  }
+  return bytes;
+}
+
 export class XlsxReader {
-  private zip: MiniUnzip;
+  private readonly source: Uint8Array;
+  private zip: MiniUnzip | null = null;
+  private maxRows = EXCEL_MAX_ROWS;
+  private maxCols = EXCEL_MAX_COLS;
   
   constructor(data: Uint8Array) {
-    this.zip = new MiniUnzip(data);
+    this.source = data;
   }
   
   private unescapeXml(str: string): string {
@@ -58,6 +96,9 @@ export class XlsxReader {
   }
   
   private async loadFile(path: string): Promise<string | null> {
+    if (!this.zip) {
+      throw new Error('El lector no está inicializado');
+    }
     return this.zip.getFileAsync(path);
   }
   
@@ -108,8 +149,12 @@ export class XlsxReader {
 
     let rowMatch;
     while ((rowMatch = rowRegex.exec(content)) !== null) {
-      const rowNum = parseInt(rowMatch[1]) - 1;
+      const rowNum = parseInt(rowMatch[1], 10) - 1;
       const rowContent = rowMatch[2];
+
+      if (!Number.isInteger(rowNum) || rowNum < 0 || rowNum >= this.maxRows) {
+        throw new Error(`Fila de Excel fuera de rango (${rowMatch[1]})`);
+      }
 
       if (rowContent.trim().length === 0) continue;
 
@@ -156,8 +201,15 @@ export class XlsxReader {
     let col = 0;
     for (let i = 0; i < letters.length; i++) {
       col = col * 26 + (letters.charCodeAt(i) - 64);
+      if (!Number.isFinite(col) || col > this.maxCols) {
+        throw new Error(`Columna de Excel fuera de rango (${letters})`);
+      }
     }
-    return col - 1;
+    const index = col - 1;
+    if (index < 0 || index >= this.maxCols) {
+      throw new Error(`Columna de Excel fuera de rango (${letters})`);
+    }
+    return index;
   }
   
   sheetToJson(data: any[][], options: ReadOptions): Record<string, any>[] {
@@ -193,7 +245,10 @@ export class XlsxReader {
     }
     
     for (let i = startRow; i < maxRow; i++) {
-      const row = data[i] || [];
+      // Huecos (filas que el XML no trae) no se materializan: un r="1048576"
+      // aislado no puede generar un millón de objetos vacíos.
+      if (data[i] === undefined) continue;
+      const row = data[i] ?? [];
       const obj: Record<string, any> = {};
       let hasValues = false;
       
@@ -213,8 +268,22 @@ export class XlsxReader {
   }
   
   async read(options?: ReadOptions): Promise<{ sheets: SheetResult[] }> {
+    this.maxRows = positiveLimit(options?.maxRows, EXCEL_MAX_ROWS, 'maxRows');
+    this.maxCols = positiveLimit(options?.maxCols, EXCEL_MAX_COLS, 'maxCols');
+    this.zip = new MiniUnzip(this.source, {
+      maxEntryBytes: entryLimitBytes(options?.maxUncompressedEntryKB),
+      maxTotalBytes: positiveLimit(
+        options?.maxUncompressedTotalBytes,
+        MAX_UNCOMPRESSED_TOTAL_BYTES,
+        'maxUncompressedTotalBytes',
+      ),
+    });
+
     const sharedStrings = await this.parseSharedStrings();
     const sheetNames = await this.parseWorksheetNames();
+    if (sheetNames.length > MAX_SHEETS) {
+      throw new Error(`El libro supera el límite de ${MAX_SHEETS} hojas`);
+    }
     
     const sheets: SheetResult[] = [];
     for (let i = 0; i < sheetNames.length; i++) {

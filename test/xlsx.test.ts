@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { XlsxWriter, XlsxReader } from "../src/xlsx";
+import { MiniZip, UnzipLimitError } from "../src/zip";
+
+function workbookWithSheet(sheetXml: string): Uint8Array {
+  const zip = new MiniZip();
+  zip.addFile(
+    "xl/workbook.xml",
+    '<?xml version="1.0"?><workbook><sheets><sheet name="Datos"/></sheets></workbook>',
+  );
+  zip.addFile("xl/sharedStrings.xml", '<?xml version="1.0"?><sst></sst>');
+  zip.addFile("xl/worksheets/sheet1.xml", sheetXml);
+  return zip.generate();
+}
 
 describe("XlsxWriter", () => {
   describe("addWorksheet", () => {
@@ -435,5 +447,64 @@ describe("XlsxWriter/XlsxReader roundtrip", () => {
     });
     expect(String(rows[1].code).length).toBeLessThan(25);
     expect(String(rows[1].description)).toContain("\r\n");
+  });
+
+  it("rejects a worksheet row past the Excel limit", async () => {
+    const xlsx = workbookWithSheet(
+      '<?xml version="1.0"?><worksheet><sheetData><row r="99999999"><c r="A99999999"><v>1</v></c></row></sheetData></worksheet>',
+    );
+    await expect(new XlsxReader(xlsx).read()).rejects.toThrow(/Fila de Excel fuera de rango/);
+  });
+
+  it("rejects a column past XFD", async () => {
+    const xlsx = workbookWithSheet(
+      '<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="AAAA1"><v>1</v></c></row></sheetData></worksheet>',
+    );
+    await expect(new XlsxReader(xlsx).read()).rejects.toThrow(/Columna de Excel fuera de rango/);
+  });
+
+  it("uses the default row limit and accepts a lower maxRows from the call", async () => {
+    const xlsx = workbookWithSheet(
+      '<?xml version="1.0"?><worksheet><sheetData><row r="5"><c r="A5"><v>1</v></c></row></sheetData></worksheet>',
+    );
+
+    const withDefault = await new XlsxReader(xlsx).read();
+    expect(withDefault.sheets[0].data[4]).toEqual([1]);
+
+    await expect(new XlsxReader(xlsx).read({ maxRows: 3 })).rejects.toThrow(/Fila de Excel fuera de rango/);
+  });
+
+  it("uses the default column limit and accepts a lower maxCols from the call", async () => {
+    const xlsx = workbookWithSheet(
+      '<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="B1"><v>2</v></c></row></sheetData></worksheet>',
+    );
+
+    const withDefault = await new XlsxReader(xlsx).read();
+    expect(withDefault.sheets[0].data[0][1]).toBe(2);
+
+    await expect(new XlsxReader(xlsx).read({ maxCols: 1 })).rejects.toThrow(/Columna de Excel fuera de rango/);
+  });
+
+  it("accepts a lower uncompressed entry limit in KB from the call", async () => {
+    const xlsx = workbookWithSheet(
+      `<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1"><v>${"1".repeat(2048)}</v></c></row></sheetData></worksheet>`,
+    );
+
+    await expect(new XlsxReader(xlsx).read()).resolves.toBeDefined();
+    await expect(
+      new XlsxReader(xlsx).read({ maxUncompressedEntryKB: 1 }),
+    ).rejects.toBeInstanceOf(UnzipLimitError);
+  });
+});
+
+describe("sheetToJson sparse rows", () => {
+  it("does not materialize missing rows as empty records", () => {
+    const data: (string | null)[][] = [];
+    data[0] = ["code", "name"];
+    data[4] = ["A-1", "Item"];
+    const reader = new XlsxReader(new Uint8Array(0));
+    const json = reader.sheetToJson(data, { header: 0 });
+
+    expect(json).toEqual([{ code: "A-1", name: "Item" }]);
   });
 });

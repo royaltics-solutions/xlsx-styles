@@ -1,5 +1,32 @@
 import { describe, it, expect } from "vitest";
-import { MiniZip, MiniUnzip } from "../src/zip";
+import { deflateRawSync } from "zlib";
+import { MiniZip, MiniUnzip, UnzipLimitError } from "../src/zip";
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function localFile(name: string, method: number, payload: Uint8Array): Uint8Array {
+  const nameBytes = new TextEncoder().encode(name);
+  const out = new Uint8Array(30 + nameBytes.length + payload.length);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(8, method, true);
+  view.setUint32(18, payload.length, true);
+  view.setUint32(22, payload.length, true);
+  view.setUint16(26, nameBytes.length, true);
+  out.set(nameBytes, 30);
+  out.set(payload, 30 + nameBytes.length);
+  return out;
+}
 
 describe("MiniZip", () => {
   describe("addFile", () => {
@@ -289,5 +316,55 @@ describe("MiniZip/MiniUnzip roundtrip", () => {
     expect(files).toContain("[Content_Types].xml");
     expect(files).toContain("xl/workbook.xml");
     expect(files).toContain("xl/worksheets/sheet1.xml");
+  });
+});
+
+describe("MiniUnzip limits", () => {
+  it("inflates a small deflate entry inside the output cap", async () => {
+    const compressed = deflateRawSync(Buffer.from("hola"));
+    const out = await MiniUnzip.inflateRaw(new Uint8Array(compressed), 1024);
+    expect(new TextDecoder().decode(out)).toBe("hola");
+  });
+
+  it("rejects an entry that inflates past the output cap", async () => {
+    const compressed = deflateRawSync(Buffer.alloc(50_000, 0x41));
+    await expect(
+      MiniUnzip.inflateRaw(new Uint8Array(compressed), 1024),
+    ).rejects.toBeInstanceOf(UnzipLimitError);
+  });
+
+  it("does not inflate entries other than the one requested", async () => {
+    const invalidDeflate = localFile("xl/bomb.xml", 8, new Uint8Array([0x00, 0x01, 0x02, 0x03]));
+    const target = localFile(
+      "xl/sharedStrings.xml",
+      0,
+      new TextEncoder().encode("<sst/>"),
+    );
+    const unzip = new MiniUnzip(concatBytes([invalidDeflate, target]));
+
+    await expect(unzip.getFileAsync("xl/sharedStrings.xml")).resolves.toBe("<sst/>");
+  });
+
+  it("keeps the default entry limit and honors a lower one from the constructor", () => {
+    const zip = new MiniZip();
+    zip.addFile("a.txt", "x".repeat(200));
+    const data = zip.generate();
+
+    expect(new MiniUnzip(data).getFile("a.txt")).toBe("x".repeat(200));
+    expect(() => new MiniUnzip(data, { maxEntryBytes: 100 }).getFile("a.txt")).toThrow(UnzipLimitError);
+  });
+
+  it("stops when a local header claims more bytes than the buffer", () => {
+    const name = new TextEncoder().encode("a.txt");
+    const out = new Uint8Array(30 + name.length + 4);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint32(18, 0xffffffff, true);
+    view.setUint16(26, name.length, true);
+    out.set(name, 30);
+
+    const unzip = new MiniUnzip(out);
+    expect(unzip.getFile("a.txt")).toBeNull();
+    expect(unzip.listFiles()).toEqual([]);
   });
 });

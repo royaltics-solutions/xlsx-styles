@@ -74,6 +74,14 @@ export interface ReadOptions {
   defval?: any;
   raw?: boolean;
   sheetRows?: number;
+  /** Máximo de filas por hoja. Default: 1_048_576. */
+  maxRows?: number;
+  /** Máximo de columnas. Default: 16_384. */
+  maxCols?: number;
+  /** Tope por entrada ZIP, en KB. Default: 65536 (64 MB). */
+  maxUncompressedEntryKB?: number;
+  /** Tope acumulado de bytes descomprimidos por archivo. Default: 256 MiB. */
+  maxUncompressedTotalBytes?: number;
 }
 
 export interface SheetResult {
