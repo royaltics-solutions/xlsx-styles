@@ -66,12 +66,12 @@ export class XlsxReader {
     if (!content) return [];
     
     const strings: string[] = [];
-    const siRegex = /<si>(.*?)<\/si>/g;
+    const siRegex = /<si>([\s\S]*?)<\/si>/g;
     let siMatch;
     
     while ((siMatch = siRegex.exec(content)) !== null) {
       const siContent = siMatch[1];
-      const tRegex = /<t[^>]*>(.*?)<\/t>/g;
+      const tRegex = /<t[^>]*>([\s\S]*?)<\/t>/g;
       let tMatch;
       let text = '';
       while ((tMatch = tRegex.exec(siContent)) !== null) {
@@ -130,7 +130,7 @@ export class XlsxReader {
           const vMatch = /<v>([^<]*)<\/v>/.exec(cellContent);
           cellValue = vMatch ? sharedStrings[parseInt(vMatch[1])] || '' : '';
         } else if (type === 'inlineStr' || type === 'str') {
-          const tMatch = /<t[^>]*>(.*?)<\/t>/.exec(cellContent);
+          const tMatch = /<t[^>]*>([\s\S]*?)<\/t>/.exec(cellContent);
           cellValue = tMatch ? this.unescapeXml(tMatch[1]) : '';
         } else if (type === 'b') {
           const vMatch = /<v>([^<]*)<\/v>/.exec(cellContent);

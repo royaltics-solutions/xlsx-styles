@@ -399,4 +399,41 @@ describe("XlsxWriter/XlsxReader roundtrip", () => {
     expect(result.sheets[0].data[0]).toEqual(["Repeated", "Repeated", "Repeated"]);
     expect(result.sheets[0].data[1][1]).toBe("Unique");
   });
+
+  it("should preserve multiline shared strings without shifting columns", async () => {
+    const multiline =
+      "FUENTE 12VDC 5A\r\nPARA CAMARAS DE SEGURIDAD\r\nCAJA METALICA 30X25X12CM";
+    const writer = new XlsxWriter();
+    writer.addWorksheet("Inventario", [
+      ["code", "names", "description"],
+      ["ABC-001", "Producto A", multiline],
+      ["ABC-002", "Producto B", "Sin salto"],
+      ["ABC-003", "Producto C", "Otra\nlinea"],
+    ]);
+
+    const xlsx = writer.generate();
+    const reader = new XlsxReader(xlsx);
+    const result = await reader.read({
+      header: ["code", "names", "description"],
+    });
+
+    const rows = result.sheets[0].json!;
+    expect(rows[1]).toEqual({
+      code: "ABC-001",
+      names: "Producto A",
+      description: multiline,
+    });
+    expect(rows[2]).toEqual({
+      code: "ABC-002",
+      names: "Producto B",
+      description: "Sin salto",
+    });
+    expect(rows[3]).toEqual({
+      code: "ABC-003",
+      names: "Producto C",
+      description: "Otra\nlinea",
+    });
+    expect(String(rows[1].code).length).toBeLessThan(25);
+    expect(String(rows[1].description)).toContain("\r\n");
+  });
 });

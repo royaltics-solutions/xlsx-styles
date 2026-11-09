@@ -214,46 +214,67 @@ describe("readFile - Node.js integration", () => {
 });
 
 describe("Real file test.xlsx from disk", () => {
-  const fixturePath = path.join(__dirname, "test.xlsx");
+  const fixturePath = path.join(__dirname, "..", "test.xlsx");
 
-  it("should read a real .xlsx file from disk (place your own test.xlsx in test/)", async () => {
-    try {
-      await fs.access(fixturePath);
-    } catch {
-      return;
-    }
-    const result = await readFile(fixturePath, { header: ['A','B','C','D','E','F']});
+  it("should read test.xlsx and keep columns aligned with multiline cells", async () => {
+    await fs.access(fixturePath);
 
-    result.sheets.forEach((sheet, i) => {
-      console.log(`\n--- Sheet ${i}: "${sheet.name}" (${sheet.data.length} rows) ---`);
-      console.log("  Header row:", JSON.stringify(sheet.data[0]));
-      if (sheet.data.length > 1) {
-        console.log("  First data row:", JSON.stringify(sheet.data[1]));
-      }
-    });
+    const result = await readFile(fixturePath, { header: 0 });
+    const sheet = result.sheets[0];
 
     expect(result.sheets.length).toBeGreaterThan(0);
-    expect(result.sheets[0].data.length).toBeGreaterThan(0);
+    expect(sheet.data.length).toBeGreaterThan(1);
+
+    const headers = (sheet.data[0] || []).map((h: unknown) => String(h ?? ""));
+    const json = sheet.json!;
+    expect(json.length).toBeGreaterThan(0);
+
+    const multilineCells = sheet.data
+      .slice(1)
+      .flatMap((row: unknown[]) => (row || []).filter((c) => typeof c === "string" && /[\r\n]/.test(c)));
+    expect(multilineCells.length).toBeGreaterThan(0);
+
+    // Regression: shared-string index shift puts long descriptions into short code columns.
+    const codeHeaderIdx = headers.findIndex((h) => /c[oó]digo|code/i.test(h));
+    if (codeHeaderIdx >= 0) {
+      const codeKey = headers[codeHeaderIdx];
+      for (const row of json.slice(0, 50)) {
+        const code = row[codeKey];
+        if (code == null || code === "") continue;
+        expect(String(code).length).toBeLessThanOrEqual(40);
+        expect(String(code)).not.toMatch(/SOBREPONER|FUENTE 12VDC/i);
+      }
+    }
   });
 
-  it("should read test.xlsx with custom headers via readFile", async () => {
-    try {
-      await fs.access(fixturePath);
-    } catch {
-      return;
-    }
+  it("should map test.xlsx rows with positional headers without column drift", async () => {
+    await fs.access(fixturePath);
+
     const result = await readFile(fixturePath, {
-      header: ["A", "B", "C", "D", "E", "F"],
+      header: ["code", "names", "description", "col3", "col4", "col5"],
     });
 
-    result.sheets.forEach((sheet, i) => {
-      if (sheet.json) {
-        console.log(`\n--- JSON Sheet ${i}: "${sheet.name}" ---`);
-        console.log(JSON.stringify(sheet.json.slice(0, 5), null, 2));
-      }
-    });
+    const rows = result.sheets[0].json!;
+    expect(rows.length).toBeGreaterThan(1);
 
-    expect(result.sheets[0].json).toBeDefined();
+    // First row is the Excel header labels mapped into the positional keys.
+    expect(String(rows[0].code ?? "").length).toBeGreaterThan(0);
+
+    const dataRows = rows.slice(1).filter((row: Record<string, unknown>) =>
+      Object.values(row).some((v) => v != null && v !== ""),
+    );
+    expect(dataRows.length).toBeGreaterThan(0);
+
+    const drifted = dataRows.filter((row: Record<string, unknown>) => {
+      const code = String(row.code ?? "");
+      const names = String(row.names ?? "");
+      return (
+        code.length > 40 ||
+        /^\d{12,14}$/.test(names) ||
+        /SOBREPONER EXTERIOR|FUENTE 12VDC/i.test(code)
+      );
+    });
+    expect(drifted).toEqual([]);
   });
 });
 
